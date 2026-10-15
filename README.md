@@ -20,5 +20,6 @@ This code is developed and maintained by [Josef Eiglsperger, M.Sc.](https://www.
 
 Citation
 ---------------------
-Forecasting sales and identifying purchase-driving attributes of perishable products with explainable artificial intelligence based on the example of yogurt. K Brückner, J Eiglsperger, DG Grimm, K Menrad.
-British Food Journal, 2025 (under review)
+Brückner, K., Eiglsperger, J., Emberger-Klein, A., Grimm, D. G., & Menrad, K. (2025). 
+Forecasting sales and identifying purchase-driving attributes of perishable products with explainable artificial intelligence based on the example of yogurt. 
+British Food Journal, 1-21.
