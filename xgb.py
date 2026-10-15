@@ -1,4 +1,5 @@
 import pandas as pd
+from shap import dependence_plot
 from sklearn.model_selection import ShuffleSplit
 import numpy as np
 import optuna
@@ -12,17 +13,6 @@ import copy
 import pickle
 import matplotlib.pyplot as plt
 
-dataset = "_no_calendar_year"
-
-data = pd.read_csv("Joghurt_20-23" + dataset + ".csv")
-
-data.replace(" ", np.nan, inplace=True)
-
-n_splits = 5
-model_name = "XGBoost"
-# models: ard, bayesridge, elasticnet, lasso, ridge, xgboost
-
-
 def get_one_hot_encoded_df(df: pd.DataFrame, columns_to_encode: list) -> pd.DataFrame:
     """
     Function delivering dataframe with specified columns one hot encoded
@@ -33,17 +23,6 @@ def get_one_hot_encoded_df(df: pd.DataFrame, columns_to_encode: list) -> pd.Data
     :return: dataset with encoded columns
     """
     return pd.get_dummies(df, columns=columns_to_encode)
-
-
-# one hot encode the data
-print("-one-hot-encoding the data-")
-if "_no_calendar" not in dataset:
-    data = get_one_hot_encoded_df(
-        df=data, columns_to_encode=["öffentlicherFeiertag", "Schulferien"]
-    )
-print("-one-hot-encoded the data-")
-data = data.drop("Produkt", axis=1)
-
 
 def drop_columns(df: pd.DataFrame, columns: list):
     """
@@ -68,12 +47,7 @@ def encode_cyclical_features(df: pd.DataFrame, columns: list):
         df[col + "_cos"] = np.cos(2 * np.pi * df[col] / max_val)
         drop_columns(df=df, columns=col)
 
-
-if "_no_calendar" not in dataset:
-    encode_cyclical_features(df=data, columns=["Woche"])
-data['MittlererPreisSonderangebote'] = data['MittlererPreisSonderangebote'].astype(float)
-
-def get_indexes(df: pd.DataFrame, n_splits: int = n_splits):
+def get_indexes(df: pd.DataFrame, n_splits: int = None):
     """
     Get the indexes for cv
 
@@ -123,14 +97,6 @@ def train_val_loop(train: pd.DataFrame, val: pd.DataFrame, model) -> np.array:
     # validate model
     return predict(X_in=val, model=model)
 
-if dataset != "_no_calendar_year":
-    test = data[data["Jahr"] == 2023]
-    if dataset == "_no_calendar_year_yearly":
-        data = data.drop("Jahr", axis=1)
-        test = test.drop("Jahr", axis=1)
-else:
-    train_val, test = train_test_split(data, test_size=0.2, random_state=42, shuffle=False)
-
 def objective(trial: optuna.trial.Trial):
     """
     Objective function for optuna optimization that returns a score
@@ -140,7 +106,7 @@ def objective(trial: optuna.trial.Trial):
     :return: score of the current hyperparameter config
     """
 
-    train_indexes, val_indexes = get_indexes(df=train_val)
+    train_indexes, val_indexes = get_indexes(df=train_val, n_splits=n_splits)
 
     max_depth = trial.suggest_int("max_depth", 2, 1000, step=10)
     n_estimators = trial.suggest_int("n_estimators", 500, 1000, step=50)
@@ -234,6 +200,60 @@ def run_optuna_optimization() -> dict:
 
     return study.best_params
 
+def get_feature_importance(model) -> pd.DataFrame:
+    """
+    Get feature importances for models that possess such a feature, e.g. XGBoost
+
+    :param model: model to analyze
+
+    :return: DataFrame with feature importance information
+    """
+    feat_import_df = pd.DataFrame()
+    feature_importances = model.feature_importances_
+    sorted_idx = feature_importances.argsort()[::-1]
+    feat_import_df["feature"] = data.drop(["GesamtmengeVj"], axis=1).columns[sorted_idx]
+    feat_import_df["feature_importance"] = feature_importances[sorted_idx]
+
+    return feat_import_df
+
+dataset = "_no_calendar_year_calories_price"
+
+if "price" in dataset or "calories" in dataset:
+    data = pd.read_csv("Datasets/Joghurt_20-23_no_calendar_year.csv")
+else:
+    data = pd.read_csv("Datasets/Joghurt_20-23" + dataset + ".csv")
+
+data.replace(" ", np.nan, inplace=True)
+
+if "price" in dataset:
+    data.drop("Preis", axis=1, inplace=True)
+if "calories" in dataset:
+    data.drop("kcalje100gr", axis=1, inplace=True)
+
+n_splits = 5
+model_name = "XGBoost"
+
+# one hot encode the data
+print("-one-hot-encoding the data-")
+if "_no_calendar" not in dataset:
+    data = get_one_hot_encoded_df(
+        df=data, columns_to_encode=["öffentlicherFeiertag", "Schulferien"]
+    )
+print("-one-hot-encoded the data-")
+data = data.drop("Produkt", axis=1)
+
+if "_no_calendar" not in dataset:
+    encode_cyclical_features(df=data, columns=["Woche"])
+data['MittlererPreisSonderangebote'] = data['MittlererPreisSonderangebote'].astype(float)
+
+if "_no_calendar_year" not in dataset:
+    test = data[data["Jahr"] == 2023]
+    if dataset == "_no_calendar_year_yearly":
+        data = data.drop("Jahr", axis=1)
+        test = test.drop("Jahr", axis=1)
+else:
+    train_val, test = train_test_split(data, test_size=0.2, random_state=42, shuffle=False)
+
 
 best_params = run_optuna_optimization()
 
@@ -254,7 +274,8 @@ pickle.dump(explainer, open("explainer/" + filename_expl, 'wb'))
 filename = 'shapvalues' + dataset + '.sav'
 pickle.dump(shap_values, open("shapvalues/" + filename, 'wb'))
 
-for feature in ["kcalje100gr", "Zuckergehaltje100gr", "Fettgehalt_neu", "Bio", "Proteingehaltje100gr"]:
+dependence_plot_features = ["kcalje100gr", ] if "calories" not in dataset else ["Zuckergehaltje100gr", "Fettgehalt_neu", "Bio", "Proteingehaltje100gr"]
+for feature in dependence_plot_features:
     shap.partial_dependence_plot(
         feature,
         best_model.predict,
@@ -265,7 +286,7 @@ for feature in ["kcalje100gr", "Zuckergehaltje100gr", "Fettgehalt_neu", "Bio", "
         show=False
     )
     f = plt.gcf()
-    f.savefig("partial_dependence_plots/shap.partial_dependence_plot" + dataset + feature + ".pdf", format='pdf', bbox_inches='tight')
+    f.savefig("Plots/partial_dependence_plots/shap.partial_dependence_plot" + dataset + feature + ".pdf", format='pdf', bbox_inches='tight')
 
 np.savetxt("predictions/predictions" + dataset + "_xgb.csv", predictions, delimiter=",")
 test.to_csv("testsets/test" + dataset + "_xgb.csv", index=False,
@@ -275,22 +296,6 @@ with open('best_params/best_params' + dataset + '_xgb.csv', 'w') as f:
     w.writerows(best_params.items())
 with open('R2_scores/R2_score' + dataset + '_xgb.txt', 'w') as f:
     f.write("R2 Score: %.2f" % sklearn.metrics.r2_score(y_true=test["GesamtmengeVj"], y_pred=predictions))
-
-def get_feature_importance(model) -> pd.DataFrame:
-    """
-    Get feature importances for models that possess such a feature, e.g. XGBoost
-
-    :param model: model to analyze
-
-    :return: DataFrame with feature importance information
-    """
-    feat_import_df = pd.DataFrame()
-    feature_importances = model.feature_importances_
-    sorted_idx = feature_importances.argsort()[::-1]
-    feat_import_df["feature"] = data.drop(["GesamtmengeVj"], axis=1).columns[sorted_idx]
-    feat_import_df["feature_importance"] = feature_importances[sorted_idx]
-
-    return feat_import_df
 
 feat_import_df = get_feature_importance(model=best_model)
 feat_import_df.to_csv(

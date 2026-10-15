@@ -8,7 +8,7 @@
 /explainer/
 /final_model_feature_importances/
 /models/
-/partial_dependence_plots/
+/Plots/partial_dependence_plots/
 /Plots/
 /predictions/
 /R2_scores/
