@@ -197,10 +197,12 @@ def run_optuna_optimization() -> dict:
 
     return study.best_params
 
-dataset = "_no_calendar_year_calories_price"
+dataset = "_no_calendar_2022"
 
-if "price" in dataset or "calories" in dataset:
+if any(ext in dataset for ext in ["price", "calories"]):
     data = pd.read_csv("Datasets/Joghurt_20-23_no_calendar_year.csv")
+elif any(ext in dataset for ext in ["2020", "2022"]):
+    data = pd.read_csv("Datasets/Joghurt_20-23_no_calendar.csv")
 else:
     data = pd.read_csv("Datasets/Joghurt_20-23" + dataset + ".csv")
 
@@ -210,6 +212,12 @@ if "price" in dataset:
     data.drop("Preis", axis=1, inplace=True)
 if "calories" in dataset:
     data.drop("kcalje100gr", axis=1, inplace=True)
+if "2020" in dataset:
+    data = data[data["Jahr"] == 2020]
+    data = data.drop("Jahr", axis=1)
+if "2022" in dataset:
+    data = data[data["Jahr"] == 2022]
+    data = data.drop("Jahr", axis=1)
 
 n_splits = 5
 model_name = "XGBoost"
@@ -227,14 +235,13 @@ if "_no_calendar" not in dataset:
     encode_cyclical_features(df=data, columns=["Woche"])
 data['MittlererPreisSonderangebote'] = data['MittlererPreisSonderangebote'].astype(float)
 
-if "_no_calendar_year" not in dataset:
+if any(ext in dataset for ext in ["_no_calendar_year", "2020", "2022"]):
+    train_val, test = train_test_split(data, test_size=0.2, random_state=42, shuffle=False)
+else:
     test = data[data["Jahr"] == 2023]
     if dataset == "_no_calendar_year_yearly":
         data = data.drop("Jahr", axis=1)
         test = test.drop("Jahr", axis=1)
-else:
-    train_val, test = train_test_split(data, test_size=0.2, random_state=42, shuffle=False)
-
 
 best_params = run_optuna_optimization()
 
